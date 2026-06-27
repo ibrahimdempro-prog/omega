@@ -11,9 +11,9 @@ interface ObjectiveProgress {
 
 interface Workspace {
   id: string;
-  nom?: string | null;
-  name?: string | null;
-  slug?: string | null;
+  name: string | null;
+  secteur: string | null;
+  status: string | null;
 }
 
 function formatEur(value: number | null | undefined): string {
@@ -26,7 +26,7 @@ function formatEur(value: number | null | undefined): string {
 }
 
 function workspaceLabel(workspace: Workspace): string {
-  return (workspace.nom ?? workspace.name ?? workspace.slug ?? workspace.id).toUpperCase();
+  return (workspace.name ?? "").toUpperCase();
 }
 
 export default function StatusBar() {
@@ -46,7 +46,7 @@ export default function StatusBar() {
 
         const [objectiveResult, workspacesResult, agentsResult] = await Promise.all([
           client.from("v_objective_progress").select("pct_objectif, ca_realise_eur, objectif_eur").maybeSingle(),
-          client.from("workspaces").select("id, nom, name, slug").eq("status", "actif"),
+          client.from("workspaces").select("id, name, secteur, status").eq("status", "actif"),
           client
             .from("agents")
             .select("*", { count: "exact", head: true })
