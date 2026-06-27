@@ -7,6 +7,7 @@ interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  error?: boolean;
 }
 
 interface ConversationHubProps {
@@ -18,31 +19,76 @@ export default function ConversationHub({
 }: ConversationHubProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, sending]);
 
-  function sendMessage() {
+  async function sendMessage() {
     const trimmed = input.trim();
-    if (!trimmed) return;
+    if (!trimmed || sending) return;
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        role: "user",
-        content: trimmed,
-      },
-    ]);
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: trimmed,
+    };
+
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
     setInput("");
+    setSending(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          messages: updatedMessages.map(({ role, content }) => ({
+            role,
+            content,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("API error");
+      }
+
+      const data = (await response.json()) as { reply?: string };
+      if (!data.reply) {
+        throw new Error("Invalid response");
+      }
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: data.reply!,
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "Erreur de connexion à l'API. Réessaie.",
+          error: true,
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      void sendMessage();
     }
   }
 
@@ -58,7 +104,7 @@ export default function ConversationHub({
           className="flex flex-col gap-2 overflow-y-auto"
           style={{ maxHeight: "320px" }}
         >
-          {messages.length === 0 ? (
+          {messages.length === 0 && !sending ? (
             <p className="py-8 text-center text-[#6B7280]">
               Aucun message pour l&apos;instant.
             </p>
@@ -79,13 +125,32 @@ export default function ConversationHub({
                     borderRadius: "6px",
                     backgroundColor:
                       message.role === "user" ? "#2A2114" : "#1C1E22",
-                    color: message.role === "user" ? "#FAC775" : "#D9D7D2",
+                    color: message.error
+                      ? "#E24B4A"
+                      : message.role === "user"
+                        ? "#FAC775"
+                        : "#D9D7D2",
                   }}
                 >
                   {message.content}
                 </div>
               </div>
             ))
+          )}
+          {sending && (
+            <div className="flex" style={{ justifyContent: "flex-start" }}>
+              <div
+                style={{
+                  maxWidth: "85%",
+                  padding: "8px 10px",
+                  borderRadius: "6px",
+                  backgroundColor: "#1C1E22",
+                  color: "#D9D7D2",
+                }}
+              >
+                ...
+              </div>
+            </div>
           )}
           <div ref={messagesEndRef} />
         </div>
@@ -105,13 +170,15 @@ export default function ConversationHub({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            disabled={sending}
             className="min-w-0 flex-1 bg-transparent font-mono text-sm outline-none"
             style={{ color: "#E8E6E1" }}
           />
           <button
             type="button"
-            onClick={sendMessage}
-            className="flex shrink-0 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent p-1"
+            onClick={() => void sendMessage()}
+            disabled={sending}
+            className="flex shrink-0 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent p-1 disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Envoyer"
           >
             <ArrowUp size={18} style={{ color: "#FAC775" }} />
